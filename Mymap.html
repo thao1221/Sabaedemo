@@ -34,8 +34,8 @@
         var map = L.map('map', { zoomControl: false }).setView([35.945, 136.186], 15);
 
        
-  　L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png', {
-    attribution: '© Stadia Maps, © OpenStreetMap contributors'
+L.tileLayer('https://tiles.stadiamaps.com/tiles/osm_bright/{z}/{x}/{y}{r}.png?api_key=0fe07573-0bb6-44f0-8e4e-f7743a299352', {
+    attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors'
 }).addTo(map);
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
