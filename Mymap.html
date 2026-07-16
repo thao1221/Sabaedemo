@@ -108,6 +108,23 @@
         #nav-banner.reroute { background: #f7a96e; }
         #nav-banner.arrive  { background: #3b88d8; }
         #nav-banner.error   { background: #d1493b; }
+
+        /* ĐIỆN THOẠI: xếp dọc để băng chỉ dẫn KHÔNG đè lên header của box điều hướng.
+           Trước đây trên mobile băng (z-index 1200) đè header nên chạm thu gọn không được. */
+        @media (max-width: 600px) {
+            #nav-banner {
+                left: 8px; right: 8px; transform: none; max-width: none;
+                font-size: 13px; padding: 10px 12px; line-height: 1.35;
+                /* giới hạn chiều cao (~2 dòng) để băng không che box điều hướng */
+                max-height: 3.4em; overflow: hidden;
+            }
+            #nav-panel {
+                top: 74px;            /* nằm dưới băng, không đè nhau */
+                right: 8px;
+                max-width: 62vw;
+                z-index: 1300;        /* cao hơn băng để header luôn chạm được */
+            }
+        }
     </style>
 </head>
 <body>
@@ -2218,13 +2235,33 @@
         const navPanel   = document.getElementById('nav-panel');
         const navSummary = document.getElementById('nav-summary');
         const navSteps   = document.getElementById('nav-steps');
-        document.getElementById('nav-close').addEventListener('click', stopNavigation);
 
-        // Thu gọn / mở danh sách bước khi bấm vào header (trừ khi bấm nút ×)
+        // Helper: gắn cả 'click' (desktop) lẫn 'touchend' (iOS/Android),
+        // chống double-fire bằng mốc thời gian. iOS thường không bắn 'click'
+        // trên <div> thường nên bắt buộc phải lắng nghe 'touchend'.
+        function bindTap(el, handler) {
+            let last = 0;
+            function run(e) {
+                const now = Date.now();
+                if (now - last < 400) return;   // bỏ qua click "ma" sau touchend
+                last = now;
+                handler(e);
+            }
+            el.addEventListener('touchend', run, { passive: true });
+            el.addEventListener('click', run);
+        }
+
+        // Nút × đóng điều hướng
+        bindTap(document.getElementById('nav-close'), function(e) {
+            if (e.stopPropagation) e.stopPropagation();
+            stopNavigation();
+        });
+
+        // Thu gọn / mở danh sách bước khi chạm header (trừ khi chạm nút ×)
         let stepsCollapsed = false;
         const navCaret = document.getElementById('nav-caret');
-        document.getElementById('nav-header').addEventListener('click', function(e) {
-            if (e.target.id === 'nav-close') return;   // bấm × thì để hàm đóng lo
+        bindTap(document.getElementById('nav-header'), function(e) {
+            if (e.target && e.target.closest && e.target.closest('#nav-close')) return;
             stepsCollapsed = !stepsCollapsed;
             navSteps.style.display = stepsCollapsed ? 'none' : 'block';
             navCaret.className = stepsCollapsed
