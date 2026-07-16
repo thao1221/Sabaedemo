@@ -108,6 +108,21 @@
         #nav-banner.reroute { background: #f7a96e; }
         #nav-banner.arrive  { background: #3b88d8; }
         #nav-banner.error   { background: #d1493b; }
+
+        /* ĐIỆN THOẠI: xếp dọc để băng chỉ dẫn KHÔNG đè lên header của box điều hướng.
+           Trước đây trên mobile băng (z-index 1200) đè header nên chạm thu gọn không được. */
+        @media (max-width: 600px) {
+            #nav-banner {
+                left: 8px; right: 8px; transform: none; max-width: none;
+                font-size: 13px; padding: 10px 12px;
+            }
+            #nav-panel {
+                top: 62px;            /* đẩy xuống dưới băng chỉ dẫn, không đè nhau */
+                right: 8px;
+                max-width: 62vw;
+                z-index: 1300;        /* cao hơn băng để header luôn chạm được */
+            }
+        }
     </style>
 </head>
 <body>
