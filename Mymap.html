@@ -118,17 +118,19 @@
     <!-- Băng chỉ dẫn tiếp theo -->
     <div id="nav-banner"></div>
 
-    <!-- Bảng điều hướng chi tiết (đã có sẵn trong file gốc, giờ nối vào động cơ navigation) -->
+    <!-- Bảng điều hướng chi tiết (thu gọn được) -->
     <div id="nav-panel" style="display:none; position:absolute; top:12px; right:12px; z-index:1000;
-             background:rgba(255,255,255,0.97); border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,0.15);
-             padding:12px 14px; max-width:280px; max-height:70vh; overflow-y:auto; font-size:13px;
+             background:rgba(255,255,255,0.97); border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.15);
+             padding:8px 10px; max-width:230px; max-height:60vh; overflow-y:auto; font-size:12.5px;
              font-family:'Segoe UI', Tahoma, sans-serif;">
-        <div style="font-weight:bold; color:#333; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
-            <span><i class="fa-solid fa-route text-green"></i> ナビ / Chỉ đường</span>
-            <span id="nav-close" style="cursor:pointer; color:#999; font-size:16px;">&times;</span>
+        <div id="nav-header" style="font-weight:bold; color:#333; display:flex; justify-content:space-between;
+             align-items:center; gap:8px; cursor:pointer; user-select:none;">
+            <span><i id="nav-caret" class="fa-solid fa-chevron-down" style="font-size:11px; color:#3eb558;"></i>
+                  <i class="fa-solid fa-route text-green"></i> ナビ</span>
+            <span id="nav-close" style="cursor:pointer; color:#999; font-size:18px; line-height:1;">&times;</span>
         </div>
-        <div id="nav-summary" style="color:#3eb558; font-weight:600; margin-bottom:8px;"></div>
-        <ol id="nav-steps" style="margin:0; padding-left:20px; color:#555; line-height:1.6;"></ol>
+        <div id="nav-summary" style="color:#3eb558; font-weight:600; margin-top:6px;"></div>
+        <ol id="nav-steps" style="margin:6px 0 0; padding-left:18px; color:#555; line-height:1.5;"></ol>
     </div>
 
     <script>
@@ -2199,7 +2201,7 @@
         // --- Trạng thái điều hướng ---
         let userMarker = null, accuracyCircle = null;
         let routingControl = null, currentRoute = null;
-        let watchId = null, isNavigating = false, firstFix = true;
+        let watchId = null, isNavigating = false, firstFix = true, triedLowAccuracy = false;
         let navDestination = null, navDestName = '';
 
         // --- Marker vị trí hiện tại (chấm xanh giống Google Maps) ---
@@ -2217,6 +2219,19 @@
         const navSummary = document.getElementById('nav-summary');
         const navSteps   = document.getElementById('nav-steps');
         document.getElementById('nav-close').addEventListener('click', stopNavigation);
+
+        // Thu gọn / mở danh sách bước khi bấm vào header (trừ khi bấm nút ×)
+        let stepsCollapsed = false;
+        const navCaret = document.getElementById('nav-caret');
+        document.getElementById('nav-header').addEventListener('click', function(e) {
+            if (e.target.id === 'nav-close') return;   // bấm × thì để hàm đóng lo
+            stepsCollapsed = !stepsCollapsed;
+            navSteps.style.display = stepsCollapsed ? 'none' : 'block';
+            navCaret.className = stepsCollapsed
+                ? 'fa-solid fa-chevron-right' : 'fa-solid fa-chevron-down';
+            navCaret.style.fontSize = '11px';
+            navCaret.style.color = '#3eb558';
+        });
 
         function showBanner(text, cls) {
             navBanner.className = '';          // reset màu
@@ -2245,11 +2260,19 @@
             navSummary.textContent = navDestName + ' へ / đến đây';
             navSteps.innerHTML = '';
 
+            triedLowAccuracy = false;
+            beginWatch(true);   // thử độ chính xác cao trước
+        };
+
+        // Bắt đầu theo dõi GPS. timeout 30s + cho dùng vị trí cache (maximumAge)
+        // để tránh lỗi timeout trên máy tính không có chip GPS thật.
+        function beginWatch(highAccuracy) {
+            if (watchId !== null) navigator.geolocation.clearWatch(watchId);
             watchId = navigator.geolocation.watchPosition(
                 onPositionUpdate, onPositionError,
-                { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+                { enableHighAccuracy: highAccuracy, maximumAge: 30000, timeout: 30000 }
             );
-        };
+        }
 
         // ═══ 2. MỖI LẦN GPS CẬP NHẬT ═══
         function onPositionUpdate(position) {
@@ -2283,10 +2306,18 @@
         }
 
         function onPositionError(err) {
+            // Timeout (mã 3): thử lại 1 lần ở độ chính xác thấp — nhanh hơn,
+            // hợp máy tính lấy vị trí qua Wi-Fi/IP thay vì GPS thật.
+            if (err.code === 3 && !triedLowAccuracy) {
+                triedLowAccuracy = true;
+                showBanner('📡 Đang thử lại (độ chính xác thấp)... / 位置を再取得中...', 'reroute');
+                beginWatch(false);
+                return;
+            }
             const messages = {
                 1: 'Bạn chưa cấp quyền vị trí / 位置情報が拒否されました',
                 2: 'Không lấy được tín hiệu GPS / GPS 取得失敗',
-                3: 'GPS timeout'
+                3: 'GPS timeout — không lấy được vị trí / 位置情報がタイムアウトしました'
             };
             showBanner('⚠ ' + (messages[err.code] || err.message), 'error');
         }
