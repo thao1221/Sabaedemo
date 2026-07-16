@@ -3,10 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>鯖江市マップ</title>
+    <title>鯖江市マップ + ナビ</title>
+
+    <!-- Leaflet -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+    <!-- Leaflet Routing Machine (động cơ điều hướng lấy từ file GPS) -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
     <style>
         html, body { height: 100%; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; }
@@ -56,6 +62,15 @@
         .custom-popup p { margin: 0; font-size: 13px; color: #666; line-height: 1.4; }
         .custom-popup .popup-hours { margin-top: 6px; font-size: 12px; color: #888; }
 
+        /* NÚT CHỈ ĐƯỜNG TRONG POPUP */
+        .nav-go-btn {
+            display: flex; align-items: center; justify-content: center; gap: 6px;
+            width: 100%; margin-top: 10px; padding: 8px 10px; border: none;
+            background: #3eb558; color: #fff; font-size: 13px; font-weight: bold;
+            border-radius: 8px; cursor: pointer; transition: background 0.15s;
+        }
+        .nav-go-btn:hover { background: #339149; }
+
         .leaflet-control-zoom { border: none !important; box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important; }
 
         /* PANEL LỌC THEO NHÓM */
@@ -80,15 +95,34 @@
             color: #fff; font-size: 10px;
         }
         .filter-chip .count { margin-left: auto; color: #999; font-weight: normal; }
+
+        /* BĂNG CHỈ DẪN TIẾP THEO (giống Google Maps navigation) — lấy từ file GPS */
+        #nav-banner {
+            position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+            z-index: 1200; background: #3eb558; color: #fff;
+            padding: 12px 20px; border-radius: 12px;
+            font-size: 15px; font-weight: bold; text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+            max-width: 70vw; display: none;
+        }
+        #nav-banner.reroute { background: #f7a96e; }
+        #nav-banner.arrive  { background: #3b88d8; }
+        #nav-banner.error   { background: #d1493b; }
     </style>
 </head>
 <body>
     <div id="map"></div>
+
     <div id="filter-panel"><h3><i class="fa-solid fa-map-location-dot"></i> 鯖江市マップ</h3></div>
-<div id="nav-panel" style="display:none; position:absolute; top:12px; right:12px; z-index:1000;
-         background:rgba(255,255,255,0.97); border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,0.15);
-         padding:12px 14px; max-width:280px; max-height:70vh; overflow-y:auto; font-size:13px;
-         font-family:'Segoe UI', Tahoma, sans-serif;">
+
+    <!-- Băng chỉ dẫn tiếp theo -->
+    <div id="nav-banner"></div>
+
+    <!-- Bảng điều hướng chi tiết (đã có sẵn trong file gốc, giờ nối vào động cơ navigation) -->
+    <div id="nav-panel" style="display:none; position:absolute; top:12px; right:12px; z-index:1000;
+             background:rgba(255,255,255,0.97); border-radius:14px; box-shadow:0 6px 20px rgba(0,0,0,0.15);
+             padding:12px 14px; max-width:280px; max-height:70vh; overflow-y:auto; font-size:13px;
+             font-family:'Segoe UI', Tahoma, sans-serif;">
         <div style="font-weight:bold; color:#333; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
             <span><i class="fa-solid fa-route text-green"></i> ナビ / Chỉ đường</span>
             <span id="nav-close" style="cursor:pointer; color:#999; font-size:16px;">&times;</span>
@@ -96,6 +130,7 @@
         <div id="nav-summary" style="color:#3eb558; font-weight:600; margin-bottom:8px;"></div>
         <ol id="nav-steps" style="margin:0; padding-left:20px; color:#555; line-height:1.6;"></ol>
     </div>
+
     <script>
         var map = L.map('map', { zoomControl: false }).setView([35.948, 136.195], 14);
 
@@ -818,7 +853,7 @@
  {
   "lat": 35.95455,
   "lng": 136.27659,
-  "name": "Hacoaダイレクトストア 福井店 Hacoaダイレクトストア 福井店",
+  "name": "Hacoaダイレクトストア 福井店 Hacoaダイレクトストア 福井店",
   "group": "urushi",
   "theme": "teal",
   "icon": "fa-solid fa-paintbrush",
@@ -2005,6 +2040,11 @@
  }
 ];
 
+        // Escape để nhét tên vào onclick an toàn (tránh vỡ chuỗi khi tên có ký tự đặc biệt)
+        function escAttr(s) {
+            return (s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+        }
+
         function createLabelMarker(spot) {
             var markerHtml = `
                 <div class="marker-container">
@@ -2024,6 +2064,7 @@
 
             var imgHtml = spot.img ? `<img src="${spot.img}" alt="${spot.name}" onerror="this.remove()">` : '';
             var hoursHtml = spot.hours ? `<div class="popup-hours">${spot.hours}</div>` : '';
+            var safeName = escAttr(spot.name);
             var popupHtml = `
                 <div class="custom-popup">
                     ${imgHtml}
@@ -2031,6 +2072,10 @@
                         <h4>${spot.name}</h4>
                         <p>${spot.desc || 'Đang cập nhật thông tin...'}</p>
                         ${hoursHtml}
+                        <button class="nav-go-btn"
+                            onclick="startNavigationTo(${spot.lat}, ${spot.lng}, '${safeName}')">
+                            <i class="fa-solid fa-route"></i> ここへ行く / Chỉ đường
+                        </button>
                     </div>
                 </div>
             `;
@@ -2065,13 +2110,15 @@
             panel.appendChild(chip);
             if (g.defaultOn) layers[key].addTo(map);
         });
+
         // Thu gọn/mở panel khi click tiêu đề
-panel.querySelector('h3').style.cursor = 'pointer';
-panel.querySelector('h3').onclick = () => {
-    panel.querySelectorAll('.filter-chip').forEach(c =>
-        c.style.display = c.style.display === 'none' ? 'flex' : 'none'
-    );
-};
+        panel.querySelector('h3').style.cursor = 'pointer';
+        panel.querySelector('h3').onclick = () => {
+            panel.querySelectorAll('.filter-chip').forEach(c =>
+                c.style.display = c.style.display === 'none' ? 'flex' : 'none'
+            );
+        };
+
         // Ẩn nhãn chữ khi zoom xa (< 15) để bản đồ không bị rối
         function updateLabels() {
             document.getElementById('map').classList.toggle('hide-labels', map.getZoom() < 15);
@@ -2080,55 +2127,278 @@ panel.querySelector('h3').onclick = () => {
         updateLabels();
 
         L.control.zoom({ position: 'bottomright' }).addTo(map);
-    // ====== NHÓM TAI NẠN GIAO THÔNG (bật/tắt trong panel) ======
-const accidentPoints = [
-    [35.943611, 136.188500], [35.943444, 136.188417],
-    [35.942972, 136.188472], [35.943389, 136.188056],
-    [35.943556, 136.185917], [35.943722, 136.185028],
-    [35.943861, 136.182639], [35.944472, 136.180250],
-    [35.943917, 136.180250], [35.943806, 136.179778],
-    [35.943833, 136.178639], [35.945361, 136.179694],
-    [35.945583, 136.179833], [35.945889, 136.180028],
-    [35.946667, 136.180500], [35.947583, 136.181111]
-];
 
-// Tạo layer group để có thể bật/tắt cả cụm
-const accidentLayer = L.layerGroup();
+        // ====== NHÓM TAI NẠN GIAO THÔNG (bật/tắt trong panel) ======
+        const accidentPoints = [
+            [35.943611, 136.188500], [35.943444, 136.188417],
+            [35.942972, 136.188472], [35.943389, 136.188056],
+            [35.943556, 136.185917], [35.943722, 136.185028],
+            [35.943861, 136.182639], [35.944472, 136.180250],
+            [35.943917, 136.180250], [35.943806, 136.179778],
+            [35.943833, 136.178639], [35.945361, 136.179694],
+            [35.945583, 136.179833], [35.945889, 136.180028],
+            [35.946667, 136.180500], [35.947583, 136.181111]
+        ];
 
-accidentPoints.forEach(function(p, i) {
-    L.circleMarker(p, {
-        radius: 7, color: '#c0392b', weight: 2,
-        fillColor: '#e74c3c', fillOpacity: 0.75
-    }).bindPopup(`<div class="custom-popup"><div class="popup-info">
-        <h4>⚠️ 交通事故地点 ${i + 1}</h4>
-        <p>事故が発生した場所 / Điểm xảy ra tai nạn</p>
-    </div></div>`).addTo(accidentLayer);
-});
+        // Tạo layer group để có thể bật/tắt cả cụm
+        const accidentLayer = L.layerGroup();
 
-accidentLayer.addTo(map); // mặc định hiện; đổi thành // để mặc định ẩn
+        accidentPoints.forEach(function(p, i) {
+            L.circleMarker(p, {
+                radius: 7, color: '#c0392b', weight: 2,
+                fillColor: '#e74c3c', fillOpacity: 0.75
+            }).bindPopup(`<div class="custom-popup"><div class="popup-info">
+                <h4>⚠️ 交通事故地点 ${i + 1}</h4>
+                <p>事故が発生した場所 / Điểm xảy ra tai nạn</p>
+                <button class="nav-go-btn"
+                    onclick="startNavigationTo(${p[0]}, ${p[1]}, '交通事故地点 ${i + 1}')">
+                    <i class="fa-solid fa-route"></i> ここへ行く / Chỉ đường
+                </button>
+            </div></div>`).addTo(accidentLayer);
+        });
 
-// --- Thêm chip「交通事故」vào panel lọc ---
-const accidentChip = document.createElement('div');
-accidentChip.className = 'filter-chip';
-accidentChip.innerHTML = `
-    <span class="dot" style="background:#e74c3c;">
-        <i class="fa-solid fa-triangle-exclamation"></i>
-    </span>
-    <span>交通事故</span>
-    <span class="count">${accidentPoints.length}</span>
-`;
-accidentChip.addEventListener('click', function() {
-    if (map.hasLayer(accidentLayer)) {
-        map.removeLayer(accidentLayer);
-        accidentChip.classList.add('off');
-    } else {
-        accidentLayer.addTo(map);
-        accidentChip.classList.remove('off');
-    }
-});
-document.getElementById('filter-panel').appendChild(accidentChip);
+        accidentLayer.addTo(map); // mặc định hiện; đổi thành // để mặc định ẩn
+
+        // --- Thêm chip「交通事故」vào panel lọc ---
+        const accidentChip = document.createElement('div');
+        accidentChip.className = 'filter-chip';
+        accidentChip.innerHTML = `
+            <span class="dot" style="background:#e74c3c;">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+            </span>
+            <span>交通事故</span>
+            <span class="count">${accidentPoints.length}</span>
+        `;
+        accidentChip.addEventListener('click', function() {
+            if (map.hasLayer(accidentLayer)) {
+                map.removeLayer(accidentLayer);
+                accidentChip.classList.add('off');
+            } else {
+                accidentLayer.addTo(map);
+                accidentChip.classList.remove('off');
+            }
+        });
+        document.getElementById('filter-panel').appendChild(accidentChip);
 
 
-</script>
+        /* ═══════════════════════════════════════════════════════════════════
+           ĐỘNG CƠ ĐIỀU HƯỚNG + GPS (ghép từ file "Leaflet GPS Navigation")
+           Kích hoạt bằng nút「ここへ行く / Chỉ đường」trong popup.
+           ═══════════════════════════════════════════════════════════════════ */
+
+        // --- Cấu hình định tuyến ---
+        // LƯU Ý: server OSRM demo công cộng (router.project-osrm.org) hiện chỉ
+        // hỗ trợ hồ sơ "driving" (ô tô). Muốn đi bộ ("foot") ổn định cần dựng
+        // server OSRM riêng. Để bản đồ luôn chạy được, mặc định để "driving".
+        const OSRM_SERVICE = 'https://router.project-osrm.org/route/v1';
+        const OSRM_PROFILE = 'driving';   // đổi 'foot' nếu bạn có server hỗ trợ đi bộ
+
+        const OFF_ROUTE_THRESHOLD = 50;   // lệch quá 50m → tính lại đường
+        const ARRIVAL_THRESHOLD   = 30;   // cách đích < 30m → đã đến nơi
+
+        // --- Trạng thái điều hướng ---
+        let userMarker = null, accuracyCircle = null;
+        let routingControl = null, currentRoute = null;
+        let watchId = null, isNavigating = false, firstFix = true;
+        let navDestination = null, navDestName = '';
+
+        // --- Marker vị trí hiện tại (chấm xanh giống Google Maps) ---
+        const userIcon = L.divIcon({
+            className: '',
+            html: `<div style="width:18px;height:18px;background:#1a73e8;
+                   border:3px solid white;border-radius:50%;
+                   box-shadow:0 0 8px rgba(26,115,232,0.8);"></div>`,
+            iconSize: [18, 18], iconAnchor: [9, 9]
+        });
+
+        // --- DOM (đặt tên riêng để KHÔNG đụng biến "panel" của filter) ---
+        const navBanner  = document.getElementById('nav-banner');
+        const navPanel   = document.getElementById('nav-panel');
+        const navSummary = document.getElementById('nav-summary');
+        const navSteps   = document.getElementById('nav-steps');
+        document.getElementById('nav-close').addEventListener('click', stopNavigation);
+
+        function showBanner(text, cls) {
+            navBanner.className = '';          // reset màu
+            if (cls) navBanner.classList.add(cls);
+            navBanner.textContent = text;
+            navBanner.style.display = 'block';
+        }
+
+        // ═══ 1. BẮT ĐẦU ĐIỀU HƯỚNG TỚI 1 ĐIỂM (gọi từ nút trong popup) ═══
+        window.startNavigationTo = function(lat, lng, name) {
+            if (!('geolocation' in navigator)) {
+                alert('Trình duyệt không hỗ trợ GPS / GPS 未対応です');
+                return;
+            }
+            // Nếu đang dẫn đường tới điểm khác → dọn tuyến cũ trước
+            if (isNavigating) resetRoute();
+
+            navDestination = L.latLng(lat, lng);
+            navDestName = name || '';
+            isNavigating = true;
+            firstFix = true;
+
+            map.closePopup();
+            showBanner('📍 GPSの位置を取得中... / Đang lấy vị trí...');
+            navPanel.style.display = 'block';
+            navSummary.textContent = navDestName + ' へ / đến đây';
+            navSteps.innerHTML = '';
+
+            watchId = navigator.geolocation.watchPosition(
+                onPositionUpdate, onPositionError,
+                { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
+            );
+        };
+
+        // ═══ 2. MỖI LẦN GPS CẬP NHẬT ═══
+        function onPositionUpdate(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+            const currentPos = L.latLng(lat, lng);
+
+            // Cập nhật marker vị trí + vòng độ chính xác
+            if (!userMarker) {
+                userMarker = L.marker(currentPos, { icon: userIcon }).addTo(map);
+                accuracyCircle = L.circle(currentPos, {
+                    radius: accuracy, color: '#1a73e8', fillOpacity: 0.1, weight: 1
+                }).addTo(map);
+            } else {
+                userMarker.setLatLng(currentPos);
+                accuracyCircle.setLatLng(currentPos).setRadius(accuracy);
+            }
+
+            // Camera bám theo vị trí: lần đầu zoom 17, sau đó chỉ pan (để user tự zoom)
+            if (firstFix) {
+                map.setView(currentPos, 17, { animate: true });
+                firstFix = false;
+            } else {
+                map.panTo(currentPos, { animate: true });
+            }
+
+            // Lần đầu → tạo route; các lần sau → kiểm tra tiến độ
+            if (!routingControl) createRoute(currentPos);
+            else checkProgress(currentPos);
+        }
+
+        function onPositionError(err) {
+            const messages = {
+                1: 'Bạn chưa cấp quyền vị trí / 位置情報が拒否されました',
+                2: 'Không lấy được tín hiệu GPS / GPS 取得失敗',
+                3: 'GPS timeout'
+            };
+            showBanner('⚠ ' + (messages[err.code] || err.message), 'error');
+        }
+
+        // ═══ 3. TẠO ROUTE TỪ VỊ TRÍ HIỆN TẠI ═══
+        function createRoute(from) {
+            routingControl = L.Routing.control({
+                waypoints: [from, navDestination],
+                router: L.Routing.osrmv1({ serviceUrl: OSRM_SERVICE, profile: OSRM_PROFILE }),
+                lineOptions: { styles: [{ color: '#1a73e8', weight: 6, opacity: 0.8 }] },
+                show: false,               // ẩn bảng mặc định của LRM, ta dùng panel riêng
+                addWaypoints: false,
+                fitSelectedRoutes: false,  // không zoom về toàn route, giữ camera theo GPS
+                createMarker: () => null   // không tạo marker A/B mặc định
+            }).addTo(map);
+
+            routingControl.on('routesfound', (e) => {
+                currentRoute = e.routes[0];
+                populateSteps();
+                showNextInstruction(0);
+            });
+
+            routingControl.on('routingerror', (e) => {
+                console.error('Routing error:', e && e.error);
+                showBanner('⚠ ルート検索に失敗しました / Không tìm được đường', 'error');
+            });
+        }
+
+        // Đổ tóm tắt + danh sách bước vào nav-panel (tận dụng khung có sẵn)
+        function populateSteps() {
+            if (!currentRoute) return;
+            const km  = (currentRoute.summary.totalDistance / 1000).toFixed(1);
+            const min = Math.round(currentRoute.summary.totalTime / 60);
+            navSummary.textContent = `${navDestName} まで ${km} km ・ 約 ${min} 分`;
+            navSteps.innerHTML = '';
+            currentRoute.instructions.forEach((inst) => {
+                const li = document.createElement('li');
+                const d = inst.distance ? ` (${Math.round(inst.distance)}m)` : '';
+                li.textContent = inst.text + d;
+                navSteps.appendChild(li);
+            });
+        }
+
+        // ═══ 4. KIỂM TRA TIẾN ĐỘ + RE-ROUTE KHI LỆCH ĐƯỜNG ═══
+        function checkProgress(currentPos) {
+            if (!currentRoute) return;
+
+            // Đã đến đích chưa?
+            if (currentPos.distanceTo(navDestination) < ARRIVAL_THRESHOLD) {
+                showBanner('🎉 目的地に到着しました / Bạn đã đến nơi!', 'arrive');
+                // dừng theo dõi GPS nhưng giữ tuyến hiển thị vài giây
+                if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+                isNavigating = false;
+                return;
+            }
+
+            // Tìm điểm gần nhất trên route để biết có lệch đường không
+            const coords = currentRoute.coordinates;
+            let minDist = Infinity, nearestIndex = 0;
+            for (let i = 0; i < coords.length; i++) {
+                const d = currentPos.distanceTo(coords[i]);
+                if (d < minDist) { minDist = d; nearestIndex = i; }
+            }
+
+            if (minDist > OFF_ROUTE_THRESHOLD) {
+                // Lệch đường → tính lại từ vị trí hiện tại
+                showBanner('🔄 ルート再検索中... / Đang tính lại đường...', 'reroute');
+                routingControl.setWaypoints([currentPos, navDestination]);
+            } else {
+                // Vẫn trên đường → hiện chỉ dẫn tiếp theo
+                updateInstruction(nearestIndex, currentPos);
+            }
+        }
+
+        // ═══ 5. HIỂN THỊ CHỈ DẪN TIẾP THEO ═══
+        function updateInstruction(nearestCoordIndex, currentPos) {
+            const instructions = currentRoute.instructions;
+            for (let i = 0; i < instructions.length; i++) {
+                if (instructions[i].index >= nearestCoordIndex) {
+                    const inst = instructions[i];
+                    const distToTurn = Math.round(
+                        currentPos.distanceTo(currentRoute.coordinates[inst.index])
+                    );
+                    showBanner(`${distToTurn}m — ${inst.text}`);
+                    return;
+                }
+            }
+        }
+
+        function showNextInstruction(i) {
+            if (currentRoute && currentRoute.instructions[i]) {
+                showBanner(currentRoute.instructions[i].text);
+            }
+        }
+
+        // Xoá tuyến + reset (dùng khi bắt đầu tuyến mới)
+        function resetRoute() {
+            if (routingControl) { map.removeControl(routingControl); routingControl = null; }
+            currentRoute = null;
+        }
+
+        // ═══ DỪNG ĐIỀU HƯỚNG (nút × trên nav-panel) ═══
+        function stopNavigation() {
+            isNavigating = false;
+            if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
+            resetRoute();
+            navBanner.style.display = 'none';
+            navPanel.style.display = 'none';
+            // Giữ lại chấm vị trí "bạn đang ở đây"; bỏ 2 dòng dưới nếu muốn xoá luôn
+            // if (userMarker)    { map.removeLayer(userMarker);    userMarker = null; }
+            // if (accuracyCircle){ map.removeLayer(accuracyCircle); accuracyCircle = null; }
+        }
+    </script>
 </body>
 </html>
