@@ -2401,7 +2401,8 @@ var labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voya
             if (firstFix) {
                 map.setView(currentPos, 17, { animate: true });
                 firstFix = false;
-            } else {
+                followGPS = true;
+            } else if(followGPS){
                 map.panTo(currentPos, { animate: true });
             }
 
