@@ -15,6 +15,20 @@
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
 
     <style>
+        #nav-panel { display: none !important; }
+        .leaflet-routing-container { display: none !important; }
+        #nav-banner { align-items: center; justify-content: space-between; gap: 12px; }
+#banner-close { font-size: 20px; line-height: 1; cursor: pointer; opacity: 0.85; flex-shrink: 0; }
+        .leaflet-tile-pane { filter: var(--tile-filter, none); }
+
+    #style-toggle {
+    position: absolute; right: 12px; bottom: 130px; z-index: 1000;
+    display: flex; align-items: center; gap: 6px;
+    padding: 9px 14px; border: none; border-radius: 22px;
+    background: rgba(255,255,255,0.97); color: #444;
+    font-size: 13px; font-weight: bold; font-family: inherit;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.15); cursor: pointer;
+}
         html, body { height: 100%; margin: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f8f9fa; }
         #map { position: absolute; top: 0; bottom: 0; width: 100%; }
 
@@ -55,12 +69,12 @@
             border-radius: 12px; padding: 0; overflow: hidden;
             box-shadow: 0 10px 25px rgba(0,0,0,0.15);
         }
-        .leaflet-popup-content { margin: 0; width: 240px !important; }
-        .custom-popup img { width: 100%; height: 130px; object-fit: cover; display: block; }
-        .custom-popup .popup-info { padding: 12px 15px; }
-        .custom-popup h4 { margin: 0 0 5px 0; font-size: 15px; color: #333; font-weight: bold; }
-        .custom-popup p { margin: 0; font-size: 13px; color: #666; line-height: 1.4; }
-        .custom-popup .popup-hours { margin-top: 6px; font-size: 12px; color: #888; }
+        .leaflet-popup-content { margin: 0; width: 180px !important; }
+        .custom-popup img { width: 100%; height: 70px; object-fit: cover; display: block; }
+        .custom-popup .popup-info { padding: 8px 10px; }
+        .custom-popup h4 { margin: 0 0 3px 0; font-size: 13.5px; color: #333; font-weight: bold; }
+        .custom-popup p { margin: 0; font-size: 11.5px; color: #666; line-height: 1.4; }
+        .custom-popup .popup-hours { margin-top: 3px; font-size: 10.5px; color: #888; }
 
         /* NÚT CHỈ ĐƯỜNG TRONG POPUP */
         .nav-go-btn {
@@ -87,6 +101,7 @@
             font-size: 12.5px; font-weight: 600; color: #444;
             cursor: pointer; user-select: none; transition: background 0.15s;
         }
+        @media (hover: hover) {
         .filter-chip:hover { background: #f0f2f5; }
         .filter-chip.off { opacity: 0.35; }
         .filter-chip .dot {
@@ -95,7 +110,7 @@
             color: #fff; font-size: 10px;
         }
         .filter-chip .count { margin-left: auto; color: #999; font-weight: normal; }
-
+        }
         /* BĂNG CHỈ DẪN TIẾP THEO (giống Google Maps navigation) — lấy từ file GPS */
         #nav-banner {
             position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
@@ -125,6 +140,12 @@
                 z-index: 1300;        /* cao hơn băng để header luôn chạm được */
             }
         }
+        .leaflet-popup-tip-container { display: none; }
+        @media (max-width: 600px) {
+    .filter-chip { padding: 10px 8px; font-size: 14px; }
+    #filter-panel { max-width: 180px; max-height: 65vh; overflow-y: auto; }
+    .leaflet-popup-content { width: 170px !important; }
+}
     </style>
 </head>
 <body>
@@ -134,7 +155,7 @@
 
     <!-- Băng chỉ dẫn tiếp theo -->
     <div id="nav-banner"></div>
-
+    <button id="style-toggle"><i class="fa-solid fa-map"></i> 標準</button>
     <!-- Bảng điều hướng chi tiết (thu gọn được) -->
     <div id="nav-panel" style="display:none; position:absolute; top:12px; right:12px; z-index:1000;
              background:rgba(255,255,255,0.97); border-radius:12px; box-shadow:0 6px 20px rgba(0,0,0,0.15);
@@ -152,13 +173,56 @@
 
     <script>
         var map = L.map('map', { zoomControl: false }).setView([35.948, 136.195], 14);
+       
+const BASE_STYLES = {
+    normal: {
+        label: '標準', icon: 'fa-solid fa-map',
+        url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
+        labels: true, filter: 'none'
+    },
+    outdoor: {   // Trời nắng: vẫn nền Voyager sạch, chỉ đẩy contrast + độ bão hòa
+        label: '屋外', icon: 'fa-solid fa-sun',
+        url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png',
+        labels: true,
+        filter: 'contrast(1.25) saturate(1.55) brightness(0.96)'
+    },
+    night: {     // Ban đêm: nền tối, marker màu nổi bật hơn hẳn
+        label: '夜間', icon: 'fa-solid fa-moon',
+        url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+        labels: false, filter: 'none'
+    }
+};
+const STYLE_ORDER = ['normal', 'outdoor', 'night'];
+let styleIndex = 0;
 
-        // Nền bản đồ trơn (Không có chữ tiếng Nhật làm rối)
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_nolabels/{z}/{x}/{y}{r}.png', {
-            attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-            maxZoom: 20
-        }).addTo(map);
+var baseTile = L.tileLayer(BASE_STYLES.normal.url, {
+    attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
+    maxZoom: 20, maxNativeZoom: 19
+}).addTo(map);
 
+var labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png', {
+    maxZoom: 20, maxNativeZoom: 19, pane: 'shadowPane'
+}).addTo(map);
+
+function applyBaseStyle(key) {
+    const s = BASE_STYLES[key];
+    baseTile.setUrl(s.url);
+    // OSM và dark_all đã có sẵn tên đường → tắt lớp nhãn rời để không bị chữ chồng chữ
+    if (s.labels) { if (!map.hasLayer(labelLayer)) labelLayer.addTo(map); }
+    else if (map.hasLayer(labelLayer)) map.removeLayer(labelLayer);
+    document.getElementById('map').style.setProperty('--tile-filter', s.filter);
+    document.getElementById('style-toggle').innerHTML = `<i class="${s.icon}"></i> ${s.label}`;
+}
+
+document.getElementById('style-toggle').addEventListener('click', () => {
+    styleIndex = (styleIndex + 1) % STYLE_ORDER.length;
+    applyBaseStyle(STYLE_ORDER[styleIndex]);
+});
+applyBaseStyle('normal');
+// Lớp tên đường (bật/tắt bằng chip 道路名)
+var labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}@2x.png', {
+    maxZoom: 20, maxNativeZoom: 19, pane: 'shadowPane'
+}).addTo(map);
         // Định nghĩa các nhóm hiển thị trong panel lọc
         const GROUPS = {
             museum:  { label: '博物館',            theme: 'blue',   icon: 'fa-solid fa-building-columns', defaultOn: true  },
@@ -183,8 +247,8 @@
   "group": "museum",
   "theme": "blue",
   "icon": "fa-solid fa-building-columns",
-  "desc": "館内にはめがねショップ、めがね博物館、手づくりめがね工房や鯖江スイーツが楽しめるカフェやお土産コーナーがあります。 福井県内優良メーカーのオリジナルハウスブランドや有名人がデザインした「sabae」ブランドめがねなど、１…",
-  "hours": "🕒 めがねSHOP：10:00〜19:00 体験工房/めがね博物館/SabaeSweets : 10:00〜17:00 MU… ／ 休: 水曜日",
+  "desc": "ショップ・博物館・体験工房を備えた、めがねの複合施設",
+  "hours": "🕒 10:00〜19:00 体験工房/めがね博物館 : 10:00〜17:00 ／ 休: 水曜日",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/pavilion_001.jpg"
  },
  {
@@ -194,7 +258,7 @@
   "group": "museum",
   "theme": "blue",
   "icon": "fa-solid fa-building-columns",
-  "desc": "鯖江市繊維会館内にある施設です。鯖江市は古くから繊維産業が盛んです。そのルーツである伝統織り「石田縞」が、時を越えて繊維のすばらしさと奥深さを伝えています。当センターでは、伝統ある石田縞の紹介や、昔ながらの手織り体験がで…",
+  "desc": "鯖江市繊維会館内にある施設です。",
   "hours": "🕒 10：00〜16：00 ／ 休: 土曜日、日曜日、祝日",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/pavilion_002.jpg"
  },
@@ -205,7 +269,7 @@
   "group": "museum",
   "theme": "blue",
   "icon": "fa-solid fa-building-columns",
-  "desc": "館内のミュージアムショップでは、産地ならではの品揃えで越前漆器が直販価格で販売されています。また、越前漆器の歴史が学べる資料が展示されているほか、隣接の職人工房では伝統工芸士による実演を見学できます。さらに、絵付け･沈金…",
+  "desc": "越前漆器の産地直売所。 ",
   "hours": "🕒 9：00〜17：00 ／ 休: 第4火曜日（祝日の場合は翌日）",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/pavilion_003.jpg"
  },
@@ -216,7 +280,7 @@
   "group": "museum",
   "theme": "blue",
   "icon": "fa-solid fa-building-columns",
-  "desc": "鯖江市の歴史が学べる博物館です。鯖江の歴代藩主の書画や遺品を紹介する「まなべの部屋」をはじめ、市内遺跡からの出土品や貴重な考古資料を紹介する「考古学の部屋」、近松門左衛門の関連資料が並ぶ「近松の部屋」、鯖江市出身のアニメ…",
+  "desc": "鯖江市の歴史が学べる博物館です。",
   "hours": "🕒 9：00〜17：00（入館は16：30まで） ／ 休: 月曜日（祝日の場合は翌日）、祝日、年末年始",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/pavilion_004.jpg"
  },
@@ -227,7 +291,7 @@
   "group": "museum",
   "theme": "blue",
   "icon": "fa-solid fa-building-columns",
-  "desc": "日本を代表するイラストレーターであり、まなべの館名誉館長でもある 鯖江市出身の久里洋二氏。彼の作品に出会える夢のギャラリーです 。ふしぎにあたたかい久里洋二氏の楽しい世界を体感できます。お気軽にお立ち寄りください。作品を…",
+  "desc": "日本を代表するイラストレーターであり、まなべの館名誉館長でもある 鯖江市出身の久里洋二氏。",
   "hours": "🕒 13：00〜18：00 ／ 休: 月曜日、火曜日、第3日曜日",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/pavilion_005.jpg"
  },
@@ -238,7 +302,7 @@
   "group": "town",
   "theme": "purple",
   "icon": "fa-solid fa-city",
-  "desc": "ハピライン鯖江駅周辺の昔ながらの街並みが残るエリアを「さばえまちなか」と呼んでいます。鯖江藩主・間部（まなべ）家の門前町として栄えたこのエリアには、花街の面影残る石畳の小路や、旧北陸道沿いのお寺、由緒ある和洋菓子店など、…",
+  "desc": "ハピライン鯖江駅周辺の昔ながらの街並みが残るエリアを「さばえまちなか」と呼んでいます。",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/town_001.jpg"
  },
@@ -249,7 +313,7 @@
   "group": "town",
   "theme": "purple",
   "icon": "fa-solid fa-city",
-  "desc": "元禄三代文豪に数えられる近松門左衛門。その作品は、後世の文学作品にも多くの影響を及ぼし、日本のシェークスピアといわれています。その近松が多感な幼年期を過ごしたのが吉江町です。この地は正保二年(1645年)から29年間、松…",
+  "desc": "元禄三代文豪に数えられる近松門左衛門。",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/town_002.jpg"
  },
@@ -260,7 +324,7 @@
   "group": "town",
   "theme": "purple",
   "icon": "fa-solid fa-city",
-  "desc": "鯖江市東部にある「うるしの里」は、伝統ある越前漆器の産地。業務用漆器の国内シェア80%以上を占めるています。中心にある「うるしの里会館」は、越前漆器の情報発信や販売、職人工房、漆器の絵付け体験などができます。産地の中でも…",
+  "desc": "鯖江市東部にある「うるしの里」は、伝統ある越前漆器の産地。",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/town_003.jpg"
  },
@@ -271,7 +335,7 @@
   "group": "temple",
   "theme": "pink",
   "icon": "fa-solid fa-vihara",
-  "desc": "親鸞聖人ゆかりの寺で、真宗誠照寺派本山で越前四箇本山の一つ。御影堂は木造建物では県内最大規模を誇る。山門は四足門で「鳥棲まずの門」とも言われ、左甚五郎作と伝えられる彫刻「駆け出しの竜」は特に有名です。また、境内では毎月第…",
+  "desc": "親鸞聖人ゆかりの寺で、真宗誠照寺派本山で越前四箇本山の一つ。",
   "hours": "🕒 9:00〜16:00",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/temples_001.jpg"
  },
@@ -326,7 +390,7 @@
   "group": "temple",
   "theme": "pink",
   "icon": "fa-solid fa-vihara",
-  "desc": "もとは鯖江藩邸内にあって、間部詮房（まなべあきふさ）、詮言（あきとき）を祀っていた受福堂が萬慶寺に移されたのを、明治に入り現在の地に移し、７代詮勝（あきかつ）も祭神に加えたものです。舟津神社の祭神大彦命（おおひこのみこと…",
+  "desc": "もとは鯖江藩邸内にあって、間部詮房、詮言を祀っていた受福堂が萬慶寺に移されたのを、明治に入り現在の地に移し、７代詮勝（あきかつ）も祭神に加えたものです。舟津神社の祭神大彦命（おおひこのみこと…",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/temples_006.jpg"
  },
@@ -337,7 +401,7 @@
   "group": "temple",
   "theme": "pink",
   "icon": "fa-solid fa-vihara",
-  "desc": "旭町2丁目にひっそりと遺るこのお堂には、弘法大師が作られた３体の霊像の一つである弁財天が安置されています。もとは、江戸幕府将軍家の宝物だったのを６代将軍徳川家宣(いえのぶ)から間部詮房が拝領したものです。弁天様は琵琶をた…",
+  "desc": "旭町2丁目にひっそりと遺るこのお堂には、弘法大師が作られた３体の霊像の一つである弁財天が安置されています。",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/temples_007.jpg"
  },
@@ -381,7 +445,7 @@
   "group": "temple",
   "theme": "pink",
   "icon": "fa-solid fa-vihara",
-  "desc": "西光寺は本願寺第７代法主存如(そんにょ)（蓮如の父）の創建による古刹(こさつ)で、真宗北陸布教の足掛かりとなったお寺です。一時は相当な数の門徒をかかえ、勢力をふるっていましたが、織田信長の軍勢に敗れ、寺も焼き討ちにあいま…",
+  "desc": "西光寺は本願寺第７代法主存如(そんにょ)（蓮如の父）の創建による古刹(こさつ)で、真宗北陸布教の足掛かりとなったお寺です。",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/temples_011.jpg"
  },
@@ -392,7 +456,7 @@
   "group": "temple",
   "theme": "pink",
   "icon": "fa-solid fa-vihara",
-  "desc": "創建は奈良時代。泰澄大師が修行中に草庵を結んだ「心敬時（しんけいじ）」が前身です。吉江藩成立後に、春慶寺という寺号になりました。近松門左衛門が幼少時代この寺の一隅を借りて住んでいたと言われています。",
+  "desc": "創建は奈良時代。泰澄大師が修行中に草庵を結んだ「心敬時」が前身です。",
   "hours": "",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/temples_012.jpg"
  },
@@ -850,11 +914,11 @@
  {
   "lat": 35.94584,
   "lng": 136.18517,
-  "name": "竹めがね Rootｓ（ルーツ）",
+  "name": "竹めがね",
   "group": "urushi",
   "theme": "teal",
   "icon": "fa-solid fa-paintbrush",
-  "desc": "竹や銘木などの自然素材めがねフレーム専門店。鯖江でしか買えない京都産の銘竹や屋久杉、スネークウッドなど、世界の銘木を素材にした職人手づくりのめがねを販売しています。",
+  "desc": "竹や銘木などの自然素材めがねフレーム専門店。",
   "hours": "🕒 9：00〜18：00 ／ 休: 水曜日",
   "img": "https://www.city.sabae.fukui.jp/xml/sabakan/simage/t_shopping_006.jpg"
  },
@@ -2078,7 +2142,7 @@
                 html: markerHtml,
                 iconSize: [200, 60],
                 iconAnchor: [100, 30],
-                popupAnchor: [0, -30]
+                popupAnchor: [0, 240]
             });
 
             var imgHtml = spot.img ? `<img src="${spot.img}" alt="${spot.name}" onerror="this.remove()">` : '';
@@ -2093,7 +2157,7 @@
                         ${hoursHtml}
                         <button class="nav-go-btn"
                             onclick="startNavigationTo(${spot.lat}, ${spot.lng}, '${safeName}')">
-                            <i class="fa-solid fa-route"></i> ここへ行く / Chỉ đường
+                            <i class="fa-solid fa-route"></i> ここへ行く 
                         </button>
                     </div>
                 </div>
@@ -2171,7 +2235,7 @@
                 <p>事故が発生した場所 / Điểm xảy ra tai nạn</p>
                 <button class="nav-go-btn"
                     onclick="startNavigationTo(${p[0]}, ${p[1]}, '交通事故地点 ${i + 1}')">
-                    <i class="fa-solid fa-route"></i> ここへ行く / Chỉ đường
+                    <i class="fa-solid fa-route"></i> ここへ行く 
                 </button>
             </div></div>`).addTo(accidentLayer);
         });
@@ -2257,7 +2321,8 @@
             stopNavigation();
         });
 
-        // Thu gọn / mở danh sách bước khi chạm header (trừ khi chạm nút ×)
+        if (userMarker)    { map.removeLayer(userMarker);    userMarker = null; }
+        if (accuracyCircle){ map.removeLayer(accuracyCircle); accuracyCircle = null; }
         let stepsCollapsed = false;
         const navCaret = document.getElementById('nav-caret');
         bindTap(document.getElementById('nav-header'), function(e) {
@@ -2270,21 +2335,23 @@
             navCaret.style.color = '#3eb558';
         });
 
-        function showBanner(text, cls) {
-            navBanner.className = '';          // reset màu
-            if (cls) navBanner.classList.add(cls);
-            navBanner.textContent = text;
-            navBanner.style.display = 'block';
-        }
+    function showBanner(text, cls) {
+    navBanner.className = '';
+    if (cls) navBanner.classList.add(cls);
+    navBanner.innerHTML =
+        `<span>${text}</span><span id="banner-close">&times;</span>`;
+    navBanner.style.display = 'flex';
+}
 
-        // ═══ 1. BẮT ĐẦU ĐIỀU HƯỚNG TỚI 1 ĐIỂM (gọi từ nút trong popup) ═══
+        // ═══ 1. BẮT ĐẦU ĐIỀU HƯỚNG TỚI 1 ĐIỂM (gọi từ nút trong popup) 
+        // ═══
         window.startNavigationTo = function(lat, lng, name) {
             if (!('geolocation' in navigator)) {
                 alert('Trình duyệt không hỗ trợ GPS / GPS 未対応です');
                 return;
             }
             // Nếu đang dẫn đường tới điểm khác → dọn tuyến cũ trước
-            if (isNavigating) resetRoute();
+             resetRoute();
 
             navDestination = L.latLng(lat, lng);
             navDestName = name || '';
@@ -2292,9 +2359,9 @@
             firstFix = true;
 
             map.closePopup();
-            showBanner('📍 GPSの位置を取得中... / Đang lấy vị trí...');
+            showBanner('📍 GPSの位置を取得中... ');
             navPanel.style.display = 'block';
-            navSummary.textContent = navDestName + ' へ / đến đây';
+            navSummary.textContent = navDestName + '  ここへ行く';
             navSteps.innerHTML = '';
 
             triedLowAccuracy = false;
@@ -2461,12 +2528,14 @@
             isNavigating = false;
             if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
             resetRoute();
-            navBanner.style.display = 'none';
-            navPanel.style.display = 'none';
             // Giữ lại chấm vị trí "bạn đang ở đây"; bỏ 2 dòng dưới nếu muốn xoá luôn
             // if (userMarker)    { map.removeLayer(userMarker);    userMarker = null; }
             // if (accuracyCircle){ map.removeLayer(accuracyCircle); accuracyCircle = null; }
         }
+    if (window.innerWidth < 600) {
+    panel.querySelectorAll('.filter-chip').forEach(c => c.style.display = 'none');
+}
+
     </script>
 </body>
 </html>
