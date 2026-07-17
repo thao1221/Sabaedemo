@@ -2284,7 +2284,7 @@ var labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voya
         let routingControl = null, currentRoute = null;
         let watchId = null, isNavigating = false, firstFix = true, triedLowAccuracy = false;
         let navDestination = null, navDestName = '';
-
+        let followGPS= true;
         // --- Marker vị trí hiện tại (chấm xanh giống Google Maps) ---
         const userIcon = L.divIcon({
             className: '',
@@ -2380,6 +2380,7 @@ var labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voya
 
         // ═══ 2. MỖI LẦN GPS CẬP NHẬT ═══
         function onPositionUpdate(position) {
+            
             const lat = position.coords.latitude;
             const lng = position.coords.longitude;
             const accuracy = position.coords.accuracy;
@@ -2535,7 +2536,7 @@ var labelLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voya
     if (window.innerWidth < 600) {
     panel.querySelectorAll('.filter-chip').forEach(c => c.style.display = 'none');
 }
-
+map.on('dragstart', function() {followGPS =false;});
     </script>
 </body>
 </html>
